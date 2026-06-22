@@ -368,7 +368,7 @@
 
   <div class="page-header">
     <h1>Team Schedule</h1>
-    <p>10-person &middot; 12-hour shifts &middot; split-week rotation &middot; starting Aug 3, 2025</p>
+    <p>10-person &middot; 12-hour shifts &middot; split-week rotation &middot; starting Aug 2, 2026</p>
   </div>
 
   <!-- Intro blurb -->
@@ -481,7 +481,7 @@
       <span class="lbadge n2">N2 · 6pm–6am</span>
       <span class="lbadge off">off</span>
     </div>
-    <div class="scroll-note">52 weeks · starting Aug 3, 2025</div>
+    <div class="scroll-note">52 weeks · starting Aug 2, 2026</div>
     <div class="week-grid">
       <table>
         <thead>
@@ -500,7 +500,7 @@
       <label>Jump to week</label>
       <input type="text" id="jump-input" placeholder="e.g. 5 or 9/5" />
     </div>
-    <div class="scroll-note">52 weeks · starting Aug 3, 2025 · click a week to expand</div>
+    <div class="scroll-note">52 weeks · starting Aug 2, 2026 · click a week to expand</div>
     <div class="crew-grid" id="crew-grid"></div>
   </div>
 
@@ -532,7 +532,7 @@
   </div>
 
 <script>
-const START = new Date('2025-08-03');
+const START = new Date('2026-08-02');
 const ROLES = ['D1','D2','D3','N1','N2'];
 const ROLE_CLS = {D1:'d1',D2:'d2',D3:'d3',N1:'n1',N2:'n2'};
 const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -774,7 +774,7 @@ document.getElementById('jump-input').addEventListener('keydown',e=>{
     if(parts.length>=2){
       const month=parseInt(parts[0])-1;
       const day=parseInt(parts[1]);
-      const year=parts[2]?parseInt(parts[2]):2025;
+      const year=parts[2]?parseInt(parts[2]):2026;
       const target=new Date(year,month,day);
       for(let w=0;w<52;w++){
         const ws=getWeekStart(w);
@@ -805,7 +805,7 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
 
 
 // ── Calendar view ───────────────────────────────────
-const calState = { year: 2025, month: 7 }; // 0-indexed month; Aug = 7
+const calState = { year: 2026, month: 7 }; // 0-indexed month; Aug = 7
 
 function updateCalSelect(){
   const sel = document.getElementById('cal-op-select');
