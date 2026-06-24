@@ -1393,6 +1393,8 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
 renderChips();
 updateSelect();
 initTimeOffListener();
+// #to-operator lives after this script tag, so re-run after full DOM parse
+setTimeout(updateSelect, 0);
 </script>
 
   <!-- Time Off tab -->
