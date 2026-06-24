@@ -45,10 +45,10 @@
   .hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; font-family: 'DM Mono', monospace; }
 
   /* Chips */
-  .chip { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: grab; user-select: none; border: 1px solid; transition: opacity 0.15s, transform 0.1s, box-shadow 0.1s; }
-  .chip:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-  .chip:active { cursor: grabbing; transform: scale(0.98); }
-  .chip.dragging { opacity: 0.3; }
+  .chip { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: grab; user-select: none; border: 1px solid; transition: box-shadow 0.15s, opacity 0.15s; position: relative; }
+  .chip:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.10); }
+  .chip:active { cursor: grabbing; }
+  .chip.dragging { opacity: 0.25; }
   .chip.fh-chip { background: var(--blue-light); color: var(--blue-dark); border-color: var(--blue-mid); }
   .chip.bh-chip { background: var(--green-light); color: var(--green-dark); border-color: var(--green-mid); }
   .chip-pos { font-family: 'DM Mono', monospace; font-size: 11px; opacity: 0.6; min-width: 16px; }
@@ -60,17 +60,29 @@
   .role-n1 { background: var(--n1-bg); color: var(--n1-fg); }
   .role-n2 { background: var(--n2-bg); color: var(--n2-fg); }
 
-  /* Up/down buttons */
-  .chip-controls { display: flex; flex-direction: column; gap: 1px; margin-left: 6px; }
+  /* Up/down reorder buttons */
+  .chip-controls { display: flex; flex-direction: column; gap: 2px; margin-left: 2px; flex-shrink: 0; }
   .chip-btn {
-    width: 16px; height: 14px; border: none; background: rgba(0,0,0,0.05);
-    color: var(--text-muted); cursor: pointer; border-radius: 3px;
+    width: 20px; height: 18px; border: 1px solid rgba(0,0,0,0.12); background: rgba(255,255,255,0.6);
+    color: inherit; cursor: pointer; border-radius: 4px; opacity: 0.7;
     font-size: 10px; line-height: 1; display: flex; align-items: center; justify-content: center;
-    transition: background 0.15s, color 0.15s;
+    transition: all 0.12s;
   }
-  .chip-btn:hover { background: rgba(0,0,0,0.1); color: var(--text); }
-  .chip-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-  .chip-btn:disabled:hover { background: rgba(0,0,0,0.05); color: var(--text-muted); }
+  .chip-btn:hover:not(:disabled) { opacity: 1; background: rgba(255,255,255,0.95); border-color: rgba(0,0,0,0.25); }
+  .chip-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+
+  /* Cross-half transfer button */
+  .chip-xfer {
+    flex-shrink: 0; width: 24px; height: 24px; border: 1px solid rgba(0,0,0,0.15);
+    background: rgba(255,255,255,0.55); color: inherit; cursor: pointer; border-radius: 5px;
+    font-size: 12px; display: flex; align-items: center; justify-content: center;
+    opacity: 0.6; transition: all 0.12s; margin-left: 2px;
+  }
+  .chip-xfer:hover { opacity: 1; background: rgba(255,255,255,0.95); border-color: rgba(0,0,0,0.3); }
+
+  /* Drag insertion-line indicator (top/bottom of chip) */
+  .chip.drop-above::before { content:''; position:absolute; top:-3px; left:4px; right:4px; height:3px; background:var(--blue-text); border-radius:2px; pointer-events:none; }
+  .chip.drop-below::after  { content:''; position:absolute; bottom:-3px; left:4px; right:4px; height:3px; background:var(--blue-text); border-radius:2px; pointer-events:none; }
   .chip.drag-over-target { outline: 2px solid var(--blue-text); outline-offset: 2px; }
 
   /* Divider */
@@ -420,6 +432,8 @@
   .to-seg-note{font-size:11px;color:#666;font-style:italic;}
   .to-seg-actions{display:flex;gap:5px;margin-left:auto;}
   .to-seg-none{font-size:12px;color:var(--text-muted);font-style:italic;padding:4px 0;}
+  .to-seg-invalid{border-color:#f59e0b;background:#fffbeb;}
+  .to-cover-invalid{font-size:11.5px;color:#b45309;background:#fef3c7;border:1px solid #f59e0b;border-radius:5px;padding:5px 9px;margin-top:5px;width:100%;line-height:1.4;}
   .to-propose-form select,.to-propose-form input{padding:5px 9px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;}
   .to-propose-form button{padding:5px 12px;border-radius:5px;border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;}
   /* Schedule overlays */
@@ -724,13 +738,10 @@ function getCrewForDay(weekIdx, dayOfWeek) {
     if (to) {
       // Off — mark them with status info
       crew.push({ name, role, half, off: true, toStatus: to.status, coveredBy: to.coveredBy || '', toId: to.id });
-      // If covered, add covering person in same role (check segment dates)
+      // Only add covering person if they're on the OPPOSITE half (same half = works same days = can't cover)
       if (to.status === 'covered' && to.coveredBy) {
-        // Verify the covering segment actually covers this date
-        const validCover = (to.segId
-          ? (to.coveredBy && to.status === 'covered')  // already resolved to segment level
-          : false) || to.coveredBy; // flat compat
-        if (validCover) {
+        const coverHalf = state.fh.includes(to.coveredBy) ? 'fh' : 'bh';
+        if (coverHalf !== half) {
           crew.push({ name: to.coveredBy, role, half, covering: name });
         }
       }
@@ -753,39 +764,117 @@ function getCrewForDay(weekIdx, dayOfWeek) {
 }
 
 // ── Drag & drop ────────────────────────────────────────────────────────────
-let dragging=null, dragSourceHalf=null, dragOverChip=null;
+let dragging=null, dragSourceHalf=null;
+
+function clearDropIndicators(){
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('drop-above','drop-below','drag-over-target'));
+}
 
 function renderChips(){
   ['fh','bh'].forEach(half=>{
     const zone=document.getElementById(`zone-${half}`);
     zone.innerHTML='';
+    const otherHalf=half==='fh'?'bh':'fh';
+    const otherLabel=half==='fh'?'→ BH':'← FH';
+
     state[half].forEach((name,idx)=>{
       const role=ROLES[idx%5];
+      const isFirst=idx===0, isLast=idx===state[half].length-1;
+
       const chip=document.createElement('div');
       chip.className=`chip ${half}-chip`;
       chip.draggable=true;
-      chip.dataset.name=name; chip.dataset.half=half;
-      chip.dataset.idx=idx;
-      chip.innerHTML=`<span class="chip-role role-${ROLE_CLS[role]}">${role}</span><span class="chip-name">${name}</span>`;
+      chip.dataset.name=name; chip.dataset.half=half; chip.dataset.idx=idx;
+      chip.innerHTML=`
+        <span class="chip-role role-${ROLE_CLS[role]}">${role}</span>
+        <span class="chip-name">${name}</span>
+        <button class="chip-xfer" title="Move to ${otherHalf==='fh'?'Front Half':'Back Half'}"
+          onclick="event.stopPropagation();xferChip('${half}',${idx})">${otherLabel}</button>
+        <div class="chip-controls">
+          <button class="chip-btn" ${isFirst?'disabled':''} title="Move up"
+            onclick="event.stopPropagation();moveChip('${half}',${idx},-1)">▲</button>
+          <button class="chip-btn" ${isLast?'disabled':''} title="Move down"
+            onclick="event.stopPropagation();moveChip('${half}',${idx},1)">▼</button>
+        </div>`;
+
+      // Drag source
       chip.addEventListener('dragstart',e=>{
         dragging=chip; dragSourceHalf=half;
         chip.classList.add('dragging');
         e.dataTransfer.effectAllowed='move';
       });
-      chip.addEventListener('dragend',()=>{ chip.classList.remove('dragging'); dragging=null; });
-      chip.addEventListener('dragover',e=>{ e.preventDefault(); if(dragging&&dragging!==chip){ chip.classList.add('drag-over'); dragOverChip=chip; }});
-      chip.addEventListener('dragleave',()=>{ chip.classList.remove('drag-over'); if(dragOverChip===chip) dragOverChip=null; });
-      chip.addEventListener('drop',e=>{
-        e.preventDefault(); chip.classList.remove('drag-over');
-        if(!dragging||dragging===chip) return;
-        const targetName=chip.dataset.name, targetHalf=chip.dataset.half;
-        const sourceName=dragging.dataset.name, sourceHalf=dragging.dataset.half;
-        swapPeople(sourceHalf,sourceName,targetHalf,targetName);
-        renderChips(); updateSelect(); updateCalSelect(); renderCrewGrid(); renderCalendar();
+      chip.addEventListener('dragend',()=>{
+        chip.classList.remove('dragging');
+        dragging=null;
+        clearDropIndicators();
       });
+
+      // Drag target — show insertion line above or below
+      chip.addEventListener('dragover',e=>{
+        if(!dragging||dragging===chip) return;
+        e.preventDefault();
+        clearDropIndicators();
+        const rect=chip.getBoundingClientRect();
+        const mid=rect.top+rect.height/2;
+        if(e.clientY<mid) chip.classList.add('drop-above');
+        else chip.classList.add('drop-below');
+      });
+      chip.addEventListener('dragleave',()=>chip.classList.remove('drop-above','drop-below'));
+
+      chip.addEventListener('drop',e=>{
+        e.preventDefault();
+        if(!dragging||dragging===chip) return;
+        const targetName=chip.dataset.name, targetHalf=chip.dataset.half, targetIdx=parseInt(chip.dataset.idx);
+        const sourceName=dragging.dataset.name, sourceHalf=dragging.dataset.half;
+        const rect=chip.getBoundingClientRect();
+        const insertBefore=e.clientY<rect.top+rect.height/2;
+        moveToPosition(sourceHalf,sourceName,targetHalf,targetName,targetIdx,insertBefore);
+        clearDropIndicators();
+        renderChips(); updateSelect(); updateCalSelect(); renderCrewGrid(); renderCalendar(); renderTimeOffList();
+      });
+
       zone.appendChild(chip);
     });
+
+    // Drop zone itself (drop onto empty space = move to end of that half)
+    zone.addEventListener('dragover',e=>{ if(dragging) e.preventDefault(); });
+    zone.addEventListener('drop',e=>{
+      e.preventDefault();
+      if(!dragging) return;
+      const sourceName=dragging.dataset.name, sourceHalf=dragging.dataset.half;
+      const targetHalf=half;
+      if(sourceHalf===targetHalf) return; // already in this zone, handled by chip drop
+      state[sourceHalf]=state[sourceHalf].filter(n=>n!==sourceName);
+      state[targetHalf].push(sourceName);
+      clearDropIndicators();
+      renderChips(); updateSelect(); updateCalSelect(); renderCrewGrid(); renderCalendar(); renderTimeOffList();
+    });
   });
+}
+
+function moveToPosition(sourceHalf, sourceName, targetHalf, targetName, targetIdx, insertBefore){
+  // Remove source from its current half
+  state[sourceHalf]=state[sourceHalf].filter(n=>n!==sourceName);
+  // Insert into target half at the right position
+  const arr=state[targetHalf];
+  let insertAt=arr.indexOf(targetName);
+  if(insertAt<0) insertAt=arr.length;
+  else if(!insertBefore) insertAt++;
+  arr.splice(insertAt,0,sourceName);
+}
+
+function isCoverageValid(operatorName, coveringName) {
+  if (!coveringName) return true; // no cover assigned yet = not invalid
+  const opHalf     = state.fh.includes(operatorName) ? 'fh' : 'bh';
+  const coverHalf  = state.fh.includes(coveringName) ? 'fh' : 'bh';
+  return opHalf !== coverHalf;
+}
+
+function xferChip(half, idx){
+  const otherHalf=half==='fh'?'bh':'fh';
+  const name=state[half].splice(idx,1)[0];
+  state[otherHalf].push(name);
+  renderChips(); updateSelect(); updateCalSelect(); renderCrewGrid(); renderCalendar(); renderTimeOffList();
 }
 
 function moveChip(half, idx, dir){
@@ -793,7 +882,7 @@ function moveChip(half, idx, dir){
   const newIdx=idx+dir;
   if(newIdx<0||newIdx>=arr.length) return;
   [arr[idx],arr[newIdx]]=[arr[newIdx],arr[idx]];
-  renderChips(); updateSelect(); renderCrewGrid();
+  renderChips(); updateSelect(); updateCalSelect(); renderCrewGrid(); renderCalendar(); renderTimeOffList();
 }
 
 function swapPeople(sourceHalf,sourceName,targetHalf,targetName){
@@ -1230,17 +1319,22 @@ function renderTimeOffList(){
       const segDateStr=s.startDate===s.endDate?fmtDisp(s.startDate):`${fmtDisp(s.startDate)}–${fmtDisp(s.endDate)}`;
       const bCls={uncovered:'uncovered',pending:'pending',covered:'covered'}[s.status]||'uncovered';
       const bTxt={uncovered:`⚠ Uncovered`,pending:`⏳ ${s.coveredBy} — pending confirmation`,covered:`✓ ${s.coveredBy} confirmed`}[s.status]||'⚠ Uncovered';
+
+      // Flag if covering person is now on the same half — can no longer cover
+      const coverInvalid = s.coveredBy && !isCoverageValid(t.operator, s.coveredBy);
+
       const segActions=s.status==='pending'
         ?`<button class="to-btn confirm" onclick="confirmSegment('${t.id}','${s.id}')">✓ Confirm</button>
            <button class="to-btn sec" onclick="removeSegment('${t.id}','${s.id}')">✕ Remove</button>`
         :s.status==='covered'
         ?`<button class="to-btn sec" onclick="removeSegment('${t.id}','${s.id}')">✕ Revoke</button>`
         :'';
-      return `<div class="to-seg">
+      return `<div class="to-seg${coverInvalid?' to-seg-invalid':''}">
         <span class="to-seg-dates">${segDateStr}</span>
         <span class="to-status-badge ${bCls}" style="font-size:11px;padding:3px 8px;">${bTxt}</span>
         ${s.note?`<span class="to-seg-note">📝 ${s.note}</span>`:''}
         <span class="to-seg-actions">${segActions}</span>
+        ${coverInvalid?`<div class="to-cover-invalid">⚠ ${s.coveredBy} is now on the same half as ${t.operator} — they work the same days and can't cover this shift. Remove and reassign.</div>`:''}
       </div>`;
     }).join('');
 
