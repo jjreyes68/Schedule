@@ -414,7 +414,12 @@
   .to-btn.confirm:hover{background:#16a34a;color:#fff;}
   .to-btn.sec{background:#f8fafc;color:#666;border-color:#ccc;}
   .to-btn.sec:hover{border-color:#e53935;color:#e53935;}
-  .to-propose-form{display:none;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;padding:10px 12px;background:#f8fafc;border-radius:7px;border:1px solid var(--border);}
+  .to-segs{display:flex;flex-direction:column;gap:5px;margin:6px 0;}
+  .to-seg{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 10px;background:#f8fafc;border-radius:6px;border:1px solid var(--border);}
+  .to-seg-dates{font-family:monospace;font-size:12px;font-weight:600;color:#444;white-space:nowrap;}
+  .to-seg-note{font-size:11px;color:#666;font-style:italic;}
+  .to-seg-actions{display:flex;gap:5px;margin-left:auto;}
+  .to-seg-none{font-size:12px;color:var(--text-muted);font-style:italic;padding:4px 0;}
   .to-propose-form select,.to-propose-form input{padding:5px 9px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;}
   .to-propose-form button{padding:5px 12px;border-radius:5px;border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;}
   /* Schedule overlays */
@@ -669,9 +674,41 @@ function getWeekIdxForDate(date){
 
 // ── Time-off helpers ───────────────────────────────────────────────────────
 function getTimeOffForOperatorDate(name, dateStr) {
-  return timeOffData.find(t =>
+  const to = timeOffData.find(t =>
     t.operator === name && dateStr >= t.startDate && dateStr <= t.endDate
-  ) || null;
+  );
+  if (!to) return null;
+
+  // Only flag days they're actually scheduled to work
+  const date = new Date(dateStr + 'T00:00:00');
+  const weekIdx = getWeekIdxForDate(date);
+  if (weekIdx < 0) return null;
+  const dow = date.getDay();
+  const half = state.fh.includes(name) ? 'fh' : 'bh';
+  const worksThisDay = half === 'fh'
+    ? (dow===0||dow===1||dow===2||(dow===3&&hasWed('fh',weekIdx)))
+    : (dow===4||dow===5||dow===6||(dow===3&&hasWed('bh',weekIdx)));
+  if (!worksThisDay) return null;
+
+  // Find the coverage segment that covers this specific date
+  const segs = to.coverage || [];
+  let seg = segs.find(s => dateStr >= s.startDate && dateStr <= s.endDate);
+
+  // Backward compat: fall back to old flat coveredBy/status fields
+  if (!seg && (to.coveredBy || to.status)) {
+    seg = { coveredBy: to.coveredBy||'', status: to.status||'uncovered', note: to.coverNote||'', startDate: to.startDate, endDate: to.endDate };
+  }
+
+  return {
+    id: to.id,
+    operator: to.operator,
+    startDate: to.startDate,
+    endDate: to.endDate,
+    coveredBy: seg?.coveredBy || '',
+    coverNote: seg?.note || '',
+    status: seg?.status || 'uncovered',
+    segId: seg?.id || null
+  };
 }
 
 // ── Crew computation ───────────────────────────────────────────────────────
@@ -687,9 +724,15 @@ function getCrewForDay(weekIdx, dayOfWeek) {
     if (to) {
       // Off — mark them with status info
       crew.push({ name, role, half, off: true, toStatus: to.status, coveredBy: to.coveredBy || '', toId: to.id });
-      // If covered, also add the covering person in the same role
+      // If covered, add covering person in same role (check segment dates)
       if (to.status === 'covered' && to.coveredBy) {
-        crew.push({ name: to.coveredBy, role, half, covering: name });
+        // Verify the covering segment actually covers this date
+        const validCover = (to.segId
+          ? (to.coveredBy && to.status === 'covered')  // already resolved to segment level
+          : false) || to.coveredBy; // flat compat
+        if (validCover) {
+          crew.push({ name: to.coveredBy, role, half, covering: name });
+        }
       }
     } else {
       crew.push({ name, role, half });
@@ -826,10 +869,13 @@ function renderTable(){
       const dateStr=isoDate(dayDate);
 
       // Is this operator covering someone (confirmed) on this date?
-      const covering=timeOffData.find(t=>
-        t.coveredBy===sel && t.status==='covered' &&
-        dateStr>=t.startDate && dateStr<=t.endDate
-      );
+      // Must check segment date ranges, not overall time-off range
+      const covering=timeOffData.find(t=>{
+        const segs=t.coverage||[];
+        if(segs.length) return segs.some(s=>s.coveredBy===sel&&s.status==='covered'&&dateStr>=s.startDate&&dateStr<=s.endDate);
+        // Backward compat: flat fields
+        return t.coveredBy===sel&&t.status==='covered'&&dateStr>=t.startDate&&dateStr<=t.endDate;
+      });
 
       if(cell===offBadge){
         // Regular off day — check if they're covering someone
@@ -1090,6 +1136,7 @@ function initTimeOffListener(){
 
 async function submitTimeOff(){
   if (!db) { alert('Firebase not connected. Open the file directly in a browser.'); return; }
+  const operator=document.getElementById('to-operator').value;
   const startDate=document.getElementById('to-start').value;
   const endDate=document.getElementById('to-end').value||startDate;
   const reason=document.getElementById('to-reason').value.trim();
@@ -1098,7 +1145,7 @@ async function submitTimeOff(){
   try{
     await db.collection('timeoff').add({
       operator,startDate,endDate,reason,
-      coveredBy:'',coverNote:'',status:'uncovered',
+      coverage:[],
       submittedAt:firebase.firestore.FieldValue.serverTimestamp()
     });
     document.getElementById('to-operator').value='';
@@ -1108,18 +1155,36 @@ async function submitTimeOff(){
   }catch(e){alert('Submit failed: '+e.message);}
 }
 
-async function proposeСoverage(id,coveredBy,note){
-  if(!coveredBy){alert('Please select a covering operator.');return;}
-  await db.collection('timeoff').doc(id).update({coveredBy,coverNote:note||'',status:'pending'});
+function makeSegId(){ return 'seg-'+Date.now()+'-'+Math.random().toString(36).slice(2,6); }
+
+async function proposeSegment(toId,coveredBy,segStart,segEnd,note){
+  if(!db) return;
+  if(!coveredBy){alert('Select a covering operator.');return;}
+  if(!segStart||!segEnd){alert('Enter start and end dates for this coverage.');return;}
+  const to=timeOffData.find(t=>t.id===toId); if(!to) return;
+  const coverage=[...(to.coverage||[])];
+  coverage.push({id:makeSegId(),coveredBy,startDate:segStart,endDate:segEnd,status:'pending',note:note||''});
+  await db.collection('timeoff').doc(toId).update({coverage});
 }
 
-async function confirmCoverage(id){
-  await db.collection('timeoff').doc(id).update({status:'covered'});
+async function confirmSegment(toId,segId){
+  if(!db) return;
+  const to=timeOffData.find(t=>t.id===toId); if(!to) return;
+  const coverage=(to.coverage||[]).map(s=>s.id===segId?{...s,status:'covered'}:s);
+  await db.collection('timeoff').doc(toId).update({coverage});
 }
 
-async function undoCoverage(id){
-  await db.collection('timeoff').doc(id).update({coveredBy:'',coverNote:'',status:'uncovered'});
+async function removeSegment(toId,segId){
+  if(!db) return;
+  const to=timeOffData.find(t=>t.id===toId); if(!to) return;
+  const coverage=(to.coverage||[]).filter(s=>s.id!==segId);
+  await db.collection('timeoff').doc(toId).update({coverage});
 }
+
+// Backward compat wrappers
+async function proposeСoverage(id,coveredBy,note){ const to=timeOffData.find(t=>t.id===id); if(!to) return; await proposeSegment(id,coveredBy,to.startDate,to.endDate,note); }
+async function confirmCoverage(id){ const to=timeOffData.find(t=>t.id===id); if(!to) return; const segs=to.coverage||[]; if(segs.length) await confirmSegment(id,segs[segs.length-1].id); }
+async function undoCoverage(id){ if(!db) return; await db.collection('timeoff').doc(id).update({coverage:[]}); }
 
 async function deleteTimeOff(id){
   if(!confirm('Delete this time off request?')) return;
@@ -1138,6 +1203,7 @@ function renderTimeOffList(){
     return;
   }
   const allOps=[...state.fh,...state.bh];
+
   container.innerHTML=upcoming.map(t=>{
     const half=state.fh.includes(t.operator)?'fh':'bh';
     const posIdx=state[half].indexOf(t.operator);
@@ -1146,29 +1212,61 @@ function renderTimeOffList(){
     const role=wkIdx>=0&&posIdx>=0?getRoleForOp(posIdx,wkIdx):'—';
     const rc=ROLE_CLS[role]||'';
     const dateStr=t.startDate===t.endDate?fmtDisp(t.startDate):`${fmtDisp(t.startDate)} → ${fmtDisp(t.endDate)}`;
-    const badgeCls={uncovered:'uncovered',pending:'pending',covered:'covered'}[t.status]||'uncovered';
-    const badgeTxt={uncovered:'⚠ Uncovered',pending:`⏳ Pending — ${t.coveredBy} proposed`,covered:`✓ Covered by ${t.coveredBy}`}[t.status]||'⚠ Uncovered';
 
-    let actions='';
-    if(t.status==='uncovered'){
-      const opts=allOps.filter(n=>n!==t.operator).map(n=>`<option value="${n}">${n}</option>`).join('');
-      actions=`
-        <button class="to-btn propose" onclick="document.getElementById('pf-${t.id}').style.display='flex'">+ Propose coverage</button>
-        <div class="to-propose-form" id="pf-${t.id}">
-          <select id="pf-op-${t.id}"><option value="">— covering operator —</option>${opts}</select>
-          <input id="pf-note-${t.id}" placeholder="Optional note" style="flex:1;min-width:120px;">
-          <button style="background:#16a34a;color:#fff;" onclick="proposeСoverage('${t.id}',document.getElementById('pf-op-${t.id}').value,document.getElementById('pf-note-${t.id}').value)">Propose</button>
-          <button style="background:#f1f5f9;color:#666;" onclick="document.getElementById('pf-${t.id}').style.display='none'">Cancel</button>
-        </div>`;
-    } else if(t.status==='pending'){
-      actions=`
-        <button class="to-btn confirm" onclick="confirmCoverage('${t.id}')">✓ Confirm coverage</button>
-        <button class="to-btn sec" onclick="undoCoverage('${t.id}')">✕ Remove proposal</button>`;
-    } else {
-      actions=`<button class="to-btn sec" onclick="undoCoverage('${t.id}')">✕ Revoke coverage</button>`;
-    }
+    // Coverage segments (new model) + backward compat
+    const segs=t.coverage||[];
+    const hasOldFlat=!segs.length&&(t.coveredBy||t.status);
+    const effectiveSegs=hasOldFlat
+      ?[{id:'legacy',coveredBy:t.coveredBy||'',startDate:t.startDate,endDate:t.endDate,status:t.status||'uncovered',note:t.coverNote||''}]
+      :segs;
 
-    return `<div class="to-entry to-${t.status||'uncovered'}">
+    // Derive overall status for border color
+    const allCovered=effectiveSegs.length>0&&effectiveSegs.every(s=>s.status==='covered');
+    const anyPending=effectiveSegs.some(s=>s.status==='pending');
+    const overallStatus=allCovered?'covered':anyPending?'pending':'uncovered';
+
+    // Render each segment
+    const segHTML=effectiveSegs.map(s=>{
+      const segDateStr=s.startDate===s.endDate?fmtDisp(s.startDate):`${fmtDisp(s.startDate)}–${fmtDisp(s.endDate)}`;
+      const bCls={uncovered:'uncovered',pending:'pending',covered:'covered'}[s.status]||'uncovered';
+      const bTxt={uncovered:`⚠ Uncovered`,pending:`⏳ ${s.coveredBy} — pending confirmation`,covered:`✓ ${s.coveredBy} confirmed`}[s.status]||'⚠ Uncovered';
+      const segActions=s.status==='pending'
+        ?`<button class="to-btn confirm" onclick="confirmSegment('${t.id}','${s.id}')">✓ Confirm</button>
+           <button class="to-btn sec" onclick="removeSegment('${t.id}','${s.id}')">✕ Remove</button>`
+        :s.status==='covered'
+        ?`<button class="to-btn sec" onclick="removeSegment('${t.id}','${s.id}')">✕ Revoke</button>`
+        :'';
+      return `<div class="to-seg">
+        <span class="to-seg-dates">${segDateStr}</span>
+        <span class="to-status-badge ${bCls}" style="font-size:11px;padding:3px 8px;">${bTxt}</span>
+        ${s.note?`<span class="to-seg-note">📝 ${s.note}</span>`:''}
+        <span class="to-seg-actions">${segActions}</span>
+      </div>`;
+    }).join('');
+
+    // Add coverage segment form
+    const opts=allOps.filter(n=>n!==t.operator).map(n=>`<option value="${n}">${n}</option>`).join('');
+    const addSegForm=`
+      <button class="to-btn propose" style="margin-top:6px;" onclick="document.getElementById('sf-${t.id}').style.display='flex'">+ Add coverage</button>
+      <div class="to-propose-form" id="sf-${t.id}" style="flex-direction:column;gap:8px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+          <select id="sf-op-${t.id}"><option value="">— covering operator —</option>${opts}</select>
+          <input type="date" id="sf-start-${t.id}" value="${t.startDate}" min="${t.startDate}" max="${t.endDate}" style="font-family:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:5px;">
+          <span style="font-size:11px;color:#666;">to</span>
+          <input type="date" id="sf-end-${t.id}" value="${t.endDate}" min="${t.startDate}" max="${t.endDate}" style="font-family:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:5px;">
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input id="sf-note-${t.id}" placeholder="Optional note" style="flex:1;padding:5px 9px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;">
+          <button style="background:#16a34a;color:#fff;padding:5px 12px;border:none;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;"
+            onclick="proposeSegment('${t.id}',document.getElementById('sf-op-${t.id}').value,document.getElementById('sf-start-${t.id}').value,document.getElementById('sf-end-${t.id}').value,document.getElementById('sf-note-${t.id}').value)">
+            Propose
+          </button>
+          <button style="background:#f1f5f9;color:#666;padding:5px 10px;border:1px solid #ccc;border-radius:5px;font-size:12px;cursor:pointer;font-family:inherit;"
+            onclick="document.getElementById('sf-${t.id}').style.display='none'">Cancel</button>
+        </div>
+      </div>`;
+
+    return `<div class="to-entry to-${overallStatus}">
       <div class="to-entry-header">
         <div class="to-entry-who">
           <span class="to-op-name">${t.operator}</span>
@@ -1178,10 +1276,9 @@ function renderTimeOffList(){
         <span class="to-dates">${dateStr}</span>
         <button class="to-del" onclick="deleteTimeOff('${t.id}')" title="Delete">✕</button>
       </div>
-      <div><span class="to-status-badge ${badgeCls}">${badgeTxt}</span></div>
-      ${t.reason?`<div class="to-entry-reason">${t.reason}</div>`:''}
-      <div class="to-actions">${actions}</div>
-      ${t.coverNote?`<div class="to-entry-note">📝 ${t.coverNote}</div>`:''}
+      ${t.reason?`<div class="to-entry-reason">📝 ${t.reason}</div>`:''}
+      <div class="to-segs">${segHTML||'<div class="to-seg-none">No coverage assigned yet</div>'}</div>
+      ${addSegForm}
     </div>`;
   }).join('');
 }
