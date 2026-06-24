@@ -27,9 +27,16 @@
   .page { max-width: 960px; margin: 0 auto; }
 
   /* Header */
-  .page-header { margin-bottom: 1.5rem; }
+  .page-header { margin-bottom: 1.5rem; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   .page-header h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.5px; }
   .page-header p { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
+  .start-date-control { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 4px; }
+  .start-date-lbl { font-size: 12px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+  .start-date-control input[type="date"] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--card-bg); color: var(--text); font-family: inherit; cursor: pointer; }
+  .start-date-control input[type="date"]:focus { outline: none; border-color: var(--blue-text); }
+  .this-week-btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.14s; white-space: nowrap; }
+  .this-week-btn:hover { border-color: var(--blue-text); color: var(--blue-text); background: #e8f0fe; }
+  .week-indicator { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; font-style: italic; }
 
   /* Halves */
   .halves { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 2rem; }
@@ -472,8 +479,16 @@
 <div class="page">
 
   <div class="page-header">
-    <h1>Team Schedule</h1>
-    <p>10-person &middot; 12-hour shifts &middot; split-week rotation &middot; starting Aug 2, 2026</p>
+    <div>
+      <h1>Team Schedule</h1>
+      <p>10-person &middot; 12-hour shifts &middot; split-week rotation</p>
+    </div>
+    <div class="start-date-control">
+      <label class="start-date-lbl">Schedule start</label>
+      <input type="date" id="start-date-input" onchange="onStartDateChange(this.value)">
+      <button class="this-week-btn" onclick="setStartToThisWeek()" title="Jump to this week">This week</button>
+      <span class="week-indicator" id="week-indicator"></span>
+    </div>
   </div>
 
   <!-- Intro blurb -->
@@ -649,7 +664,29 @@ try {
 }
 
 // ── Schedule constants ─────────────────────────────────────────────────────
-const START = new Date(2026, 7, 2);
+const SCHED_START_KEY = 'rnwbl_sched_start';
+
+function snapToSunday(date) {
+  const d = new Date(date);
+  const dow = d.getDay();
+  if (dow !== 0) d.setDate(d.getDate() - dow);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function initStartDate() {
+  const saved = localStorage.getItem(SCHED_START_KEY);
+  let start;
+  if (saved) {
+    start = snapToSunday(new Date(saved + 'T00:00:00'));
+  } else {
+    // Default: this week's Sunday
+    start = snapToSunday(new Date());
+  }
+  return start;
+}
+
+let START = initStartDate();
 const ROLES = ['D1','D2','D3','N1','N2'];
 const ROLE_CLS = {D1:'d1',D2:'d2',D3:'d3',N1:'n1',N2:'n2'};
 const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -880,6 +917,44 @@ function moveToPosition(sourceHalf, sourceName, targetHalf, targetName, targetId
   if(insertAt<0) insertAt=arr.length;
   else if(!insertBefore) insertAt++;
   arr.splice(insertAt,0,sourceName);
+}
+
+// ── Start date control ──────────────────────────────────────────────────────
+function applyStartDate(date) {
+  START = snapToSunday(date);
+  localStorage.setItem(SCHED_START_KEY, isoDate(START));
+  // Sync date input
+  const inp = document.getElementById('start-date-input');
+  if (inp) inp.value = isoDate(START);
+  // Update week indicator
+  updateWeekIndicator();
+  // Re-render all views
+  renderTable(); renderCrewGrid(); renderCalendar(); renderTimeOffList();
+}
+
+function onStartDateChange(val) {
+  if (!val) return;
+  applyStartDate(new Date(val + 'T00:00:00'));
+}
+
+function setStartToThisWeek() {
+  applyStartDate(new Date());
+}
+
+function updateWeekIndicator() {
+  const el = document.getElementById('week-indicator');
+  if (!el) return;
+  const todayIdx = getWeekIdxForDate(new Date());
+  if (todayIdx >= 0 && todayIdx < 52) {
+    el.textContent = `Week ${todayIdx + 1} of 52 is current`;
+    el.style.color = 'var(--green-text, #15803d)';
+  } else if (todayIdx < 0) {
+    el.textContent = 'Today is before schedule start';
+    el.style.color = 'var(--text-muted)';
+  } else {
+    el.textContent = 'Today is past the 52-week window';
+    el.style.color = 'var(--text-muted)';
+  }
 }
 
 function isCoverageValid(operatorName, coveringName) {
@@ -1138,7 +1213,7 @@ function renderCrewGrid(){
 }
 
 // ── Calendar view ──────────────────────────────────────────────────────────
-const calState={year:2026,month:7};
+const calState={year:new Date().getFullYear(),month:new Date().getMonth()};
 
 function updateCalSelect(){
   const sel=document.getElementById('cal-op-select');
@@ -1420,7 +1495,13 @@ renderChips();
 updateSelect();
 initTimeOffListener();
 // #to-operator lives after this script tag, so re-run after full DOM parse
-setTimeout(updateSelect, 0);
+setTimeout(() => {
+  updateSelect();
+  // Populate start date input and week indicator
+  const inp = document.getElementById('start-date-input');
+  if (inp) inp.value = isoDate(START);
+  updateWeekIndicator();
+}, 0);
 </script>
 
   <!-- Time Off tab -->
