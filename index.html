@@ -80,6 +80,15 @@
   }
   .chip-xfer:hover { opacity: 1; background: rgba(255,255,255,0.95); border-color: rgba(0,0,0,0.3); }
 
+  /* Delete operator button */
+  .chip-del {
+    flex-shrink: 0; width: 20px; height: 20px; border: 1px solid rgba(0,0,0,0.12);
+    background: rgba(255,255,255,0.4); color: inherit; cursor: pointer; border-radius: 4px;
+    font-size: 11px; display: flex; align-items: center; justify-content: center;
+    opacity: 0.4; transition: all 0.12s; margin-left: 2px;
+  }
+  .chip-del:hover { opacity: 1; background: #fdecea; border-color: #e53935; color: #e53935; }
+
   /* Drag insertion-line indicator (top/bottom of chip) */
   .chip.drop-above::before { content:''; position:absolute; top:-3px; left:4px; right:4px; height:3px; background:var(--blue-text); border-radius:2px; pointer-events:none; }
   .chip.drop-below::after  { content:''; position:absolute; bottom:-3px; left:4px; right:4px; height:3px; background:var(--blue-text); border-radius:2px; pointer-events:none; }
@@ -253,16 +262,20 @@
     text-transform: uppercase;
     letter-spacing: 0.07em;
     color: var(--text-muted);
-    margin-bottom: 8px;
+    margin-bottom: 10px;
   }
   .intro-section p {
     font-size: 14px;
     line-height: 1.65;
     color: var(--text);
   }
+  .intro-section ul { margin: 0; padding-left: 16px; }
+  .intro-section ul li { font-size: 13.5px; line-height: 1.7; color: var(--text-muted); margin-bottom: 4px; }
+  .intro-section ul li:last-child { margin-bottom: 0; }
+  .intro-section ul li strong { color: var(--text); font-weight: 600; }
   .pitch-cards {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 10px;
     border-top: 1px solid var(--border);
     padding-top: 1.25rem;
@@ -469,34 +482,24 @@
       <div class="intro-top">
         <div class="intro-section">
           <h2>How the schedule works</h2>
-          <p>
-            The team is split into two permanent halves &mdash; <strong>Front Half</strong> (Sun&ndash;Tue, every other Wed)
-            and <strong>Back Half</strong> (every other Wed, Thu&ndash;Sat). Each shift is 12 hours: days run
-            6am&ndash;6pm, nights run 6pm&ndash;6am. Every week your role rotates &mdash; D1 &rarr; D2 &rarr; D3 &rarr; N1 &rarr; N2 &mdash; so
-            over five weeks you cycle through every position before starting again. Wednesday flips between
-            halves each week so both sides share the mid-week day equally across the year.
-            <br><br>
-            The result: you always know your days off, your days on never change, and the only thing that
-            shifts week to week is your role.
-          </p>
+          <ul>
+            <li><strong>Two fixed halves</strong> — Front Half (Sun–Tue + alternating Wed) · Back Half (alternating Wed + Thu–Sat)</li>
+            <li><strong>12-hour shifts</strong> — Days 6am–6pm · Nights 6pm–6am</li>
+            <li><strong>Weekly rotation</strong> — D1 → D2 → D3 → N1 → N2, repeating every 5 weeks</li>
+            <li><strong>Wednesday alternates</strong> between halves each week</li>
+            <li><strong>Result</strong> — Fixed days on/off · only your role changes week to week</li>
+          </ul>
         </div>
-<div class="team-setup">
-  <h3>Team Setup</h3>
-  <ul>
-    <li>Use the <strong>BH / FH arrow button</strong> to move operators between halves</li>
-    <li>Position = starting role (1 = D1, 5 = N2)</li>
-    <li>Use the <strong>▲ ▼ arrows</strong> to reorder within a half</li>
-  </ul>
-</div>
-
-<div class="views">
-  <h3>Views</h3>
-  <ul>
-    <li><strong>Individual:</strong> your full 52‑week schedule</li>
-    <li><strong>Crew:</strong> full crew by day, grouped by week</li>
-    <li><strong>Calendar:</strong> schedule in calendar format</li>
-  </ul>
-</div>
+        <div class="intro-section">
+          <h2>Team setup</h2>
+          <ul>
+            <li>Use the <strong>→ BH / ← FH</strong> button to move operators between halves</li>
+            <li><strong>Position = starting role</strong> — slot 1 = D1, slot 5 = N2</li>
+            <li>Use the <strong>▲ ▼ arrows</strong> to reorder within a half</li>
+            <li>Use <strong>✕</strong> to remove an operator — the rotation adjusts automatically</li>
+            <li>Switch to <strong>Individual</strong>, <strong>Crew</strong>, or <strong>Calendar</strong> view to explore the schedule</li>
+          </ul>
+        </div>
       </div>
 
       <div class="pitch-cards">
@@ -509,11 +512,6 @@
           <div class="pitch-icon">&#9878;</div>
           <div class="pitch-title">Fair rotation, no favorites</div>
           <div class="pitch-body">Every operator cycles through every role &mdash; D1, D2, D3, nights &mdash; on the exact same schedule. Nobody is stuck on nights permanently.</div>
-        </div>
-        <div class="pitch-card">
-          <div class="pitch-icon">&#128197;</div>
-          <div class="pitch-title">More days off than a 5-day week</div>
-          <div class="pitch-body">You work 3 days one week, 4 the next &mdash; averaging 3.5 per week. That's more consecutive days off to actually recharge.</div>
         </div>
         <div class="pitch-card">
           <div class="pitch-icon">&#129309;</div>
@@ -673,7 +671,20 @@ function fmtDisp(iso) {
   const [, m, d] = iso.split('-');
   return parseInt(m) + '/' + parseInt(d);
 }
-function getRoleForOp(posIdx, weekIdx){ return ROLES[(posIdx + weekIdx) % 5]; }
+function getRolesForHalf(half) {
+  const n = state[half].length;
+  if (n >= 5) return ['D1','D2','D3','N1','N2'];
+  if (n === 4) return ['D1','D2','D3','N1'];
+  if (n === 3) return ['D1','D2','N1'];
+  if (n === 2) return ['D1','N1'];
+  if (n === 1) return ['D1'];
+  return [];
+}
+function getRoleForOp(posIdx, weekIdx, half) {
+  const roles = (half && state[half]) ? getRolesForHalf(half) : ROLES;
+  if (!roles.length) return 'D1';
+  return roles[(posIdx + weekIdx) % roles.length];
+}
 function hasWed(half, weekIdx){ return half==='fh' ? weekIdx%2===0 : weekIdx%2===1; }
 function getWeekStart(weekIdx){ const d=new Date(START); d.setDate(d.getDate()+weekIdx*7); return d; }
 function getWeekDates(weekIdx){
@@ -738,7 +749,7 @@ function getCrewForDay(weekIdx, dayOfWeek) {
   const roleOrder = {D1:0,D2:1,D3:2,N1:3,N2:4};
 
   const processOp = (name, posIdx, half) => {
-    const role = getRoleForOp(posIdx, weekIdx);
+    const role = getRoleForOp(posIdx, weekIdx, half);
     const to = getTimeOffForOperatorDate(name, dateStr);
     if (to) {
       // Off — mark them with status info
@@ -783,7 +794,8 @@ function renderChips(){
     const otherLabel=half==='fh'?'→ BH':'← FH';
 
     state[half].forEach((name,idx)=>{
-      const role=ROLES[idx%5];
+      const roles = getRolesForHalf(half);
+      const role = roles[idx % roles.length] || 'D1';
       const isFirst=idx===0, isLast=idx===state[half].length-1;
 
       const chip=document.createElement('div');
@@ -800,7 +812,9 @@ function renderChips(){
             onclick="event.stopPropagation();moveChip('${half}',${idx},-1)">▲</button>
           <button class="chip-btn" ${isLast?'disabled':''} title="Move down"
             onclick="event.stopPropagation();moveChip('${half}',${idx},1)">▼</button>
-        </div>`;
+        </div>
+        <button class="chip-del" title="Remove ${name} from roster"
+          onclick="event.stopPropagation();deleteChip('${half}',${idx})">✕</button>`;
 
       // Drag source
       chip.addEventListener('dragstart',e=>{
@@ -875,6 +889,13 @@ function isCoverageValid(operatorName, coveringName) {
   return opHalf !== coverHalf;
 }
 
+function deleteChip(half, idx){
+  const name=state[half][idx];
+  if(!confirm(`Remove ${name} from the roster?\n\nThe schedule will adjust automatically — ${half==='fh'?'Front Half':'Back Half'} will rotate through ${getRolesForHalf(half).length-1 || 1} role${getRolesForHalf(half).length-1===1?'':'s'} once removed.`)) return;
+  state[half].splice(idx,1);
+  renderChips(); updateSelect(); updateCalSelect(); renderCrewGrid(); renderCalendar(); renderTimeOffList();
+}
+
 function xferChip(half, idx){
   const otherHalf=half==='fh'?'bh':'fh';
   const name=state[half].splice(idx,1)[0];
@@ -947,7 +968,7 @@ function renderTable(){
   for(let w=0;w<52;w++){
     const tr=document.createElement('tr');
     if(w%2===1) tr.classList.add('alt');
-    const role=getRoleForOp(posIdx,w);
+    const role=getRoleForOp(posIdx,w,half);
     const rc=ROLE_CLS[role];
     const rb=`<span class="rbadge ${rc}">${role}</span>`;
     const wedOn=hasWed(half,w);
@@ -976,7 +997,7 @@ function renderTable(){
         if(covering){
           const covHalf=state.fh.includes(covering.operator)?'fh':'bh';
           const covPos=state[covHalf].indexOf(covering.operator);
-          const covRole=covPos>=0?getRoleForOp(covPos,w):'';
+          const covRole=covPos>=0?getRoleForOp(covPos,w,covHalf):'';
           const rc=ROLE_CLS[covRole]||'';
           return `<span class="rbadge ${rc} cvr-badge" title="Covering ${covering.operator} — working as ${covRole}">↔ ${covRole||'Cvr'}</span>`;
         }
@@ -987,7 +1008,7 @@ function renderTable(){
       const to=getTimeOffForOperatorDate(sel,dateStr);
       if(!to){
         if(covering){
-          const role=getRoleForOp(posIdx,w);
+          const role=getRoleForOp(posIdx,w,half);
           return `<span class="rbadge ${ROLE_CLS[role]}" title="Working own shift + covering ${covering.operator}">${role} <span style="font-size:9px">+↔</span></span>`;
         }
         return cell;
@@ -1303,7 +1324,7 @@ function renderTimeOffList(){
     const posIdx=state[half].indexOf(t.operator);
     const startD=new Date(t.startDate+'T00:00:00');
     const wkIdx=getWeekIdxForDate(startD);
-    const role=wkIdx>=0&&posIdx>=0?getRoleForOp(posIdx,wkIdx):'—';
+    const role=wkIdx>=0&&posIdx>=0?getRoleForOp(posIdx,wkIdx,half):'—';
     const rc=ROLE_CLS[role]||'';
     const dateStr=t.startDate===t.endDate?fmtDisp(t.startDate):`${fmtDisp(t.startDate)} → ${fmtDisp(t.endDate)}`;
 
