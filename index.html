@@ -421,6 +421,8 @@
   .rbadge.to-off-unc{background:#fdecea;color:#c62828;font-size:11px;}
   .rbadge.to-off-pen{background:#fffbeb;color:#b45309;font-size:11px;}
   .rbadge.to-off-cov{background:#dcfce7;color:#15803d;font-size:11px;}
+  .rbadge.cvr-badge{outline:2px solid #16a34a;outline-offset:1px;position:relative;}
+  .rbadge.cvr-badge::before{content:'↔';margin-right:3px;font-size:9px;}
   .ps-off-lbl{font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:3px;}
   .ps-off-lbl.unc{background:#fdecea;color:#c62828;}
   .ps-off-lbl.pen{background:#fffbeb;color:#b45309;}
@@ -814,17 +816,42 @@ function renderTable(){
     const wedOn=hasWed(half,w);
     const weekStart=getWeekStart(w);
 
-    // Build cells, then overlay time-off
+    // Build cells, then overlay time-off and coverage
     let rawCells;
     if(half==='fh') rawCells=[rb,rb,rb,wedOn?rb:offBadge,offBadge,offBadge,offBadge];
     else             rawCells=[offBadge,offBadge,offBadge,wedOn?rb:offBadge,rb,rb,rb];
 
     const cells=rawCells.map((cell,dayIdx)=>{
-      if(cell===offBadge) return cell; // already scheduled off
       const dayDate=addDays(weekStart,dayIdx);
       const dateStr=isoDate(dayDate);
+
+      // Is this operator covering someone (confirmed) on this date?
+      const covering=timeOffData.find(t=>
+        t.coveredBy===sel && t.status==='covered' &&
+        dateStr>=t.startDate && dateStr<=t.endDate
+      );
+
+      if(cell===offBadge){
+        // Regular off day — check if they're covering someone
+        if(covering){
+          const covHalf=state.fh.includes(covering.operator)?'fh':'bh';
+          const covPos=state[covHalf].indexOf(covering.operator);
+          const covRole=covPos>=0?getRoleForOp(covPos,w):'';
+          const rc=ROLE_CLS[covRole]||'';
+          return `<span class="rbadge ${rc} cvr-badge" title="Covering ${covering.operator} — working as ${covRole}">↔ ${covRole||'Cvr'}</span>`;
+        }
+        return cell;
+      }
+
+      // Regular work day — check if operator has time off
       const to=getTimeOffForOperatorDate(sel,dateStr);
-      if(!to) return cell;
+      if(!to){
+        if(covering){
+          const role=getRoleForOp(posIdx,w);
+          return `<span class="rbadge ${ROLE_CLS[role]}" title="Working own shift + covering ${covering.operator}">${role} <span style="font-size:9px">+↔</span></span>`;
+        }
+        return cell;
+      }
       const clsMap={uncovered:'to-off-unc',pending:'to-off-pen',covered:'to-off-cov'};
       const lblMap={uncovered:'⚠ Off',pending:'⏳ Off',covered:'✓ Off'};
       const tip=to.status==='covered'?`Covered by ${to.coveredBy}`:to.status;
