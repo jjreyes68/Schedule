@@ -613,9 +613,16 @@ const firebaseConfig = {
   messagingSenderId: "740448991184",
   appId:             "1:740448991184:web:2ec302043f07502a6c2bd5"
 };
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-let timeOffData = []; // live-synced from Firestore
+
+let db = null;
+try {
+  if (typeof firebase !== 'undefined') {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+  }
+} catch(e) {
+  console.warn('Firebase init failed:', e.message);
+}
 
 // ── Schedule constants ─────────────────────────────────────────────────────
 const START = new Date(2026, 7, 2);
@@ -1031,6 +1038,13 @@ document.getElementById('cal-op-select').addEventListener('change',renderCalenda
 
 // ── Time Off Firestore functions ───────────────────────────────────────────
 function initTimeOffListener(){
+  if (!db) {
+    const status = document.getElementById('to-fb-status');
+    if (status) status.textContent = '⚠ Firebase not available in this preview. Open the file directly in Chrome to use Time Off features.';
+    const list = document.getElementById('to-list');
+    if (list) list.innerHTML = '<div class="to-empty">Open this file in a browser to connect to Firestore.</div>';
+    return;
+  }
   db.collection('timeoff').orderBy('startDate','asc').onSnapshot(snap=>{
     timeOffData = snap.docs.map(doc=>({id:doc.id,...doc.data()}));
     // Re-render all views with updated time-off data
@@ -1048,7 +1062,7 @@ function initTimeOffListener(){
 }
 
 async function submitTimeOff(){
-  const operator=document.getElementById('to-operator').value;
+  if (!db) { alert('Firebase not connected. Open the file directly in a browser.'); return; }
   const startDate=document.getElementById('to-start').value;
   const endDate=document.getElementById('to-end').value||startDate;
   const reason=document.getElementById('to-reason').value.trim();
