@@ -376,7 +376,7 @@
   .cal-cell.empty { background: var(--bg); }
   .cal-cell.today { background: #fffbeb; }
   .cal-cell.today .cal-day-num { color: var(--blue-text); font-weight: 700; }
-  .cal-cell.has-focus { background: #f0f7ff; }
+  .cal-cell.has-focus { background: #f6f9ff; }
 
   .cal-day-num {
     font-size: 13px; font-weight: 500; color: var(--text-muted);
@@ -388,8 +388,9 @@
     font-size: 11px; font-weight: 500; line-height: 1.3;
     cursor: default;
   }
-  .cal-person.faded { opacity: 0.3; }
-  .cal-person.highlighted { outline: 2px solid currentColor; outline-offset: 1px; }
+  .cal-person.faded { opacity: 0.25; }
+  .cal-person.highlighted { font-weight: 600; opacity: 1; }
+  .cal-person.highlighted .cp-dot { opacity: 1; width: 7px; height: 7px; }
   .cal-person .cp-dot {
     width: 6px; height: 6px; border-radius: 50%;
     flex-shrink: 0; background: currentColor; opacity: 0.6;
@@ -1387,7 +1388,7 @@ function renderCalendar(){
       } else {
         crew.forEach(p=>{
           const slot=document.createElement('div');
-          let slotCls=`cal-person cp-${ROLE_CLS[p.role]}`;
+          let slotCls=`cal-person`;
           if(p.off) slotCls+=' cp-is-off';
           if(focusPerson){
             if(p.name===focusPerson) slotCls+=' highlighted';
@@ -1396,7 +1397,7 @@ function renderCalendar(){
           const offMark=p.off?(p.toStatus==='covered'?'✓':'⚠'):'';
           const coverNote=p.covering?` <span style="font-size:9px;opacity:.65">(cvr ${p.covering})</span>`:'';
           slot.className=slotCls;
-          slot.innerHTML=`<span class="cp-dot"></span><span class="cp-name">${p.name}${offMark?` <span style="font-size:9px">${offMark}</span>`:''}${coverNote}</span>&nbsp;<span class="cp-role">${p.role}</span>`;
+          slot.innerHTML=`<span class="cp-dot" style="background:var(--${ROLE_CLS[p.role]}-fg);opacity:.85;"></span><span class="cp-name">${p.name}${offMark?` <span style="font-size:9px">${offMark}</span>`:''}${coverNote}</span>&nbsp;<span class="cp-role">${p.role}</span>`;
           cell.appendChild(slot);
         });
         if(focusPerson&&crew.some(p=>p.name===focusPerson)) cls+=' has-focus';
